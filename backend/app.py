@@ -139,5 +139,3 @@ async def classify_email(file: UploadFile = File(...)):
 
     except Exception as e:
         return {"error": str(e)}
-
-# Run locally
