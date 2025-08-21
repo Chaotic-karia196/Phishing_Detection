@@ -106,7 +106,38 @@ def generate_phishing_detection_prompt(email_content: str) -> str:
     """
     return prompt
 
-# API endpoint: classify a single email file
+def classify_email_rationale(raw_rationale: str):
+    """
+    Parse the model's rationale and return a structured phishing result.
+    If parsing fails, defaults to phishing=True.
+    """
+    result = {
+        "is_phishing": True,
+        "phishing_score": 5,
+        "brand_impersonated": None,
+        "rationales": None,
+        "brief_reason": "Model did not return structured response; likely malicious"
+    }
+
+    if not raw_rationale:
+        return {"result": result}
+
+    try:
+        cleaned = re.sub(r"```json|```", "", raw_rationale).strip()
+        parsed = json.loads(cleaned)
+        result["is_phishing"] = parsed.get("is_phishing", True)
+        result["phishing_score"] = parsed.get("phishing_score")
+        result["brand_impersonated"] = parsed.get("brand_impersonated")
+        result["rationales"] = parsed.get("rationales")
+        result["brief_reason"] = parsed.get("brief_reason")
+    except (json.JSONDecodeError, TypeError):
+        result["rationales"] = raw_rationale
+
+    return {"result": result}
+
+
+# ----------------- FastAPI Endpoint -----------------
+
 @app.post("/classify")
 async def classify_email(file: UploadFile = File(...)):
     try:
@@ -114,28 +145,20 @@ async def classify_email(file: UploadFile = File(...)):
         raw_content = await file.read()
         email_content = raw_content.decode("utf-8", errors="ignore")
 
-        # Simplify HTML
+        # Simplify HTML content
         simplified_content = simplify_html(email_content)
 
-        # Create prompt
+        # Generate prompt for the model
         prompt = generate_phishing_detection_prompt(simplified_content)
 
-        # Call API
-        response = model.generate_content(prompt)
+        # Call the model API
+        response = model.generate_content(prompt)  # Replace with your actual model call
         response_text = response.text
 
-        try:
-            response_json = json.loads(response_text)
-        except json.JSONDecodeError:
-            response_json = {
-                "is_phishing": False,
-                "phishing_score": 0,
-                "brand_impersonated": None,
-                "rationales": response_text,
-                "brief_reason": "Parsing error"
-            }
+        # Parse and classify using new robust function
+        classification = classify_email_rationale(response_text)
 
-        return {"result": response_json}
+        return classification
 
     except Exception as e:
         return {"error": str(e)}
